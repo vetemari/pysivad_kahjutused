@@ -1,0 +1,280 @@
+// ============================================================
+// Laadi 8 aastate põllumaa vektorkihid ja teisenda rasteriks
+// ============================================================
+
+var agriVec2017 = ee.FeatureCollection("projects/magister-458413/assets/neg10_pollud2017");
+var agriVec2018 = ee.FeatureCollection("projects/magister-458413/assets/neg10_pollud2018");
+var agriVec2019 = ee.FeatureCollection("projects/magister-458413/assets/neg10_pollud2019");
+var agriVec2020 = ee.FeatureCollection("projects/magister-458413/assets/neg10_pollud2020");
+var agriVec2021 = ee.FeatureCollection("projects/magister-458413/assets/neg10_pollud2021");
+var agriVec2022 = ee.FeatureCollection("projects/magister-458413/assets/neg10_pollud2022");
+var agriVec2023 = ee.FeatureCollection("projects/magister-458413/assets/neg10_pollud2023");
+var agriVec2024 = ee.FeatureCollection("projects/magister-458413/assets/neg10_pollud2024");
+
+var proj3301 = ee.Projection('EPSG:3301');
+
+// Hardcode Eesti bounding box — väldib geometry arvutamise vigu
+var exportRegion = ee.Geometry.Rectangle([21.5, 57.5, 28.1, 59.9]);
+
+var vectorToRaster = function(fc) {
+  return fc
+    .map(function(f) { return f.set('agri', 1); })
+    .reduceToImage(['agri'], ee.Reducer.first())
+    .reproject({crs: proj3301, scale: 10})
+    .rename('agri')
+    .unmask(0, false);
+};
+
+var r2017 = vectorToRaster(agriVec2017);
+var r2018 = vectorToRaster(agriVec2018);
+var r2019 = vectorToRaster(agriVec2019);
+var r2020 = vectorToRaster(agriVec2020);
+var r2021 = vectorToRaster(agriVec2021);
+var r2022 = vectorToRaster(agriVec2022);
+var r2023 = vectorToRaster(agriVec2023);
+var r2024 = vectorToRaster(agriVec2024);
+
+var agriYearCount = r2017.add(r2018).add(r2019).add(r2020)
+                        .add(r2021).add(r2022).add(r2023)
+                        .add(r2024);
+
+var studyRaster = agriYearCount.gte(7).reproject({crs: proj3301, scale: 10});
+
+Map.setCenter(25.0, 58.7, 7);
+
+Map.addLayer(
+  agriYearCount.updateMask(agriYearCount.gt(0)),
+  {min: 1, max: 9, palette: ['#ffffcc','#c2e699','#78c679','#31a354','#006837']},
+  'Põllumaa aastate arv (1-8)', false
+);
+Map.addLayer(
+  studyRaster.selfMask(),
+  {min: 1, max: 1, palette: ['#1b7837']},
+  'Uurimisala (≥7 aastat põllumaa)', false
+);
+
+var MaskStudyArea = function(image) {
+  return image.updateMask(studyRaster);
+};
+
+// ============================================================
+// Satelliidiandmed ja pilved
+// ============================================================
+
+var S2 = ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+  .filter(ee.Filter.date('2017-06-15', '2024-07-15'))
+  .map(MaskStudyArea);
+
+function bitwiseExtract(value, fromBit, toBit) {
+  if (toBit === undefined) toBit = fromBit;
+  var maskSize = ee.Number(1).add(toBit).subtract(fromBit);
+  var mask = ee.Number(1).leftShift(maskSize).subtract(1);
+  return value.rightShift(fromBit).bitwiseAnd(mask);
+}
+
+var maskClouds = function(image) {
+  var quality = image.select('QA60');
+  var cloudState = bitwiseExtract(quality, 10);
+  var cirrusState = bitwiseExtract(quality, 11);
+  var mask = cloudState.eq(0).and(cirrusState.eq(0));
+  return image.updateMask(mask);
+};
+
+var filtereds2 = S2.map(maskClouds);
+
+// ============================================================
+// EVI arvutamine
+// ============================================================
+
+var years = ee.List.sequence(2017, 2024);
+var months = ee.List.sequence(6, 7);
+
+var yearMonthEVI = years.map(function(year) {
+  return months.map(function(month) {
+    var startDate = ee.Date.fromYMD(year, month, 1);
+    var endDate = startDate.advance(1, 'month');
+
+    var medianImage = filtereds2.filterDate(startDate, endDate)
+      .select(['B8', 'B4', 'B2'])
+      .median();
+
+    var evi = medianImage.expression(
+      '2.5 * ((NIR - RED) / (NIR + 6 * RED - 7.5 * BLUE + 1))', {
+        'NIR': medianImage.select('B8').divide(10000),
+        'RED': medianImage.select('B4').divide(10000),
+        'BLUE': medianImage.select('B2').divide(10000)
+      }).rename('EVI');
+
+    return evi
+      .set('system:time_start', startDate)
+      .set('year', year)
+      .set('month', month);
+  });
+}).flatten();
+
+var eviCollection = ee.ImageCollection(yearMonthEVI);
+
+// ============================================================
+// Visualiseerimine
+// ============================================================
+
+var calculateMonthlyCompositeEVI = function(year, month) {
+  var startDate = ee.Date.fromYMD(year, month, 1);
+  var endDate = startDate.advance(1, 'month');
+  var meanEVI = eviCollection.filterDate(startDate, endDate)
+    .mean()
+    .updateMask(studyRaster);
+    Map.addLayer(meanEVI, {min: -1, max: 1, palette: ['white', 'green']},
+    'Mean EVI ' + year + '-' + month, false);
+};
+
+years.getInfo().forEach(function(year) {
+  for (var month = 6; month <= 7; month++) {
+    calculateMonthlyCompositeEVI(year, month);
+  }
+});
+
+// ============================================================
+// Graafikud
+// ============================================================
+
+var eviChart = ui.Chart.image.seriesByRegion({
+  imageCollection: eviCollection,
+  band: 'EVI',
+  regions: roi1,
+  reducer: ee.Reducer.mean(),
+  scale: 10,
+  seriesProperty: 'month',
+  xProperty: 'system:time_start'
+}).setChartType('ColumnChart')
+  .setOptions({
+    title: 'Kuupõhine EVI (juuni–juuli) esimene ala',
+    hAxis: {title: 'Aasta ja kuu', format: 'yyyy-MM', slantedText: true},
+    vAxis: {title: 'EVI', viewWindow: {min: 0, max: 1}},
+    legend: {position: 'none'},
+    colors: ['#1b7837']
+  });
+print(eviChart);
+
+var eviChart1 = ui.Chart.image.seriesByRegion({
+  imageCollection: eviCollection,
+  band: 'EVI',
+  regions: roi2,
+  reducer: ee.Reducer.mean(),
+  scale: 10,
+  seriesProperty: 'month',
+  xProperty: 'system:time_start'
+}).setChartType('ColumnChart')
+  .setOptions({
+    title: 'Kuupõhine EVI (juuni–juuli) teine ala',
+    hAxis: {title: 'Aasta ja kuu', format: 'yyyy-MM', slantedText: true},
+    vAxis: {title: 'EVI', viewWindow: {min: 0, max: 1}},
+    legend: {position: 'none'},
+    colors: ['#1b7837']
+  });
+print(eviChart1);
+
+// ============================================================
+// Püsivalt madala EVI tuvastamine
+// ============================================================
+
+var lowEVIWithThreshold = function(image, eviThreshold) {
+  return image.gte(-1).and(image.lte(eviThreshold));
+};
+
+var detectPersistentLowEVI = function(eviCollection, eviThreshold, timeThreshold) {
+  var lowEVIMask = eviCollection.map(function(image) {
+    return lowEVIWithThreshold(image, eviThreshold);
+  });
+  var lowEVIPercentage = lowEVIMask.sum().divide(eviCollection.size()).multiply(100);
+  return lowEVIPercentage.gte(timeThreshold);
+};
+
+var eviThresholds = [0.30, 0.33, 0.35];
+var timeThresholds = [55, 60, 65, 70, 75];
+
+var allResults = [];
+
+eviThresholds.forEach(function(eviThresh) {
+  timeThresholds.forEach(function(timeThresh) {
+    var result = detectPersistentLowEVI(eviCollection, eviThresh, timeThresh)
+      .updateMask(studyRaster);
+    allResults.push(result);
+    var layerName = 'evi' + (eviThresh * 100).toFixed(0) + '_time' + timeThresh;
+    Map.addLayer(result, {min: 0, max: 1, palette: ['green', 'red']}, layerName, false);
+  });
+});
+
+// ============================================================
+// Heatmap — ainult eksport
+// ============================================================
+
+var heatmap = ee.ImageCollection(allResults).sum();
+
+// exportRegion peab olema ENNE eksporte
+var exportRegion = ee.Geometry.Rectangle([21.5, 57.5, 28.1, 59.9]);
+
+// ============================================================
+// EKSPORT — ainult vajalikud failid
+// ============================================================
+
+// 1. Põllumaastiku raster (0-8 aastat) — uurimisala kontrolliks
+Export.image.toDrive({
+  image: agriYearCount.toByte().reproject({crs: proj3301, scale: 10}),
+  description: 'fields_0to8',
+  folder: 'EarthEngineExports',
+  fileNamePrefix: 'fields_0to8',
+  scale: 10,
+  crs: 'EPSG:3301',
+  region: exportRegion,
+  maxPixels: 1e13,
+  fileDimensions: 16384
+});
+
+// 2. Heatmap (0-15 kombineeritud)
+Export.image.toDrive({
+  image: heatmap.toFloat().updateMask(studyRaster).reproject({crs: proj3301, scale: 10}),
+  description: 'heatmap_0to15',
+  folder: 'EarthEngineExports',
+  fileNamePrefix: 'heatmap_0to15',
+  scale: 10,
+  crs: 'EPSG:3301',
+  region: exportRegion,
+  maxPixels: 1e13,
+  fileDimensions: 16384
+});
+
+// 3. StudyRaster asset — vajalik kui kasutad seda teistes skriptides
+Export.image.toAsset({
+  image: studyRaster.toByte().reproject({crs: proj3301, scale: 10}),
+  description: 'studyRaster_7of8_asset',
+  assetId: 'projects/magister-458413/assets/studyRaster_7of8',
+  scale: 10,
+  crs: 'EPSG:3301',
+  region: exportRegion,
+  maxPixels: 1e13
+});
+
+// 4. Kõik 15 mudelit eraldi — vajalik R analüüsiks
+eviThresholds.forEach(function(eviThresh) {
+  timeThresholds.forEach(function(timeThresh) {
+    var result = detectPersistentLowEVI(eviCollection, eviThresh, timeThresh)
+      .updateMask(studyRaster)
+      .toByte();
+
+    var fileName = 'mudel_evi' + (eviThresh * 100).toFixed(0) +
+                   '_time' + timeThresh ;
+
+    Export.image.toDrive({
+      image: result.reproject({crs: proj3301, scale: 10}),
+      description: fileName,
+      folder: 'EarthEngineExports',
+      fileNamePrefix: fileName,
+      scale: 10,
+      crs: 'EPSG:3301',
+      region: exportRegion,
+      maxPixels: 1e13,
+      fileDimensions: 16384
+    });
+  });
+});
