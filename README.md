@@ -1,5 +1,5 @@
-# Püsivate Põllukultuurikahjustuste Tuvastamine Eestis
-### Sentinel-2 EVI Aegridade Analüüs (2017–2024) | Google Earth Engine
+# Põllukultuuride püsivate kahjustuste tuvastamine Sentinel-2 andmete abil Eestis
+### Sentinel-2 EVI aegridade analüüs (2017–2024) | Google Earth Engine
 
 Projekt tuvastab püsivalt kahjustunud põllumajandusalasid üle Eesti, kasutades Sentinel-2 satelliidipilte ja täiustatud taimkatte indeksit (EVI). Töötati välja magistritöö raames, mille eesmärk on analüüsida pikaajaliste põllukultuurikahjustuste ruumilist jaotust ja potentsiaalseid põhjuseid Eesti põllumajandusmaastikes.
 
@@ -7,10 +7,10 @@ Projekt tuvastab püsivalt kahjustunud põllumajandusalasid üle Eesti, kasutade
 
 ## Ülevaade
 
-Skript tuvastab piksleid, kus taimkate on püsivalt kehv 8-aastase perioodi (2017–2024) jooksul, kasutades kahte reguleeritavat läviväärtust:
+Skript tuvastab piksleid, kus taimkate on püsivalt kehv 8-aastase perioodi (2017–2024) jooksul, kasutades kahte reguleeritavat lävendväärtust:
 
-- **EVI läviväärtus** — maksimaalne EVI väärtus, mida loetakse kahjustunuks (nt ≤ 0,30; 0,33 või 0,35)
-- **Ajaline läviväärtus** — minimaalne osakaal vaatlustest, mil EVI peab olema lävendist madalam (nt 55%, 60%, 65%, 70%, 75%)
+- **EVI lävend** — maksimaalne EVI väärtus, mida loetakse kahjustunuks (nt ≤ 0,30; 0,33 või 0,35)
+- **Ajaline lävend** — minimaalne osakaal vaatlustest, mil EVI peab olema lävendist madalam (nt 55%, 60%, 65%, 70%, 75%)
 
 Kokku genereeritakse **15 mudelikombinatsiooni**. Tulemused kombineeritakse **soojuskaardiks (0–15)**, mis näitab, mitu mudelit klassifitseerib iga piksli kahjustunuks — kõrgem väärtus tähendab suuremat kindlust püsiva kahjustuse suhtes.
 
@@ -31,7 +31,7 @@ Eesti — põllumajandusmaa, mis oli klassifitseeritud põllumaaks **vähemalt 7
 Aastased põllumajandusmaa vektorkihid teisendatakse rasterkujule ja liidetakse. Analüüsi kaasatakse ainult pikslid, mis olid põllumaa vähemalt 7 aastal 8-st.
 
 ### 2. Pilvefilter
-Sentinel-2 SR (pinnaheledus) pildid filtreeritakse `QA60` kihi abil — läbipaistmatud pilved (bitt 10) ja tsirrus-pilved (bitt 11) eemaldatakse.
+Sentinel-2 SR  pildid filtreeritakse `QA60` kihi abil — läbipaistmatud pilved (bitt 10) ja tsirrus-pilved (bitt 11) eemaldatakse.
 
 ### 3. EVI arvutamine
 Iga aasta **juuni ja juuli** kohta arvutatakse kuised mediaankomposiidid, kasutades standardset EVI valemit:
@@ -43,7 +43,7 @@ EVI = 2,5 × (NIR − RED) / (NIR + 6×RED − 7,5×BLUE + 1)
 Kasutatakse Sentinel-2 kanaleid: B8 (NIR), B4 (RED), B2 (BLUE), skaleeritud peegeldusvõimeks (÷10000).
 
 ### 4. Püsivate kahjustuste tuvastamine
-Iga 15 lävikombinatsiooni puhul klassifitseeritakse piksel kahjustunuks, kui selle EVI on allpool EVI läviväärtust vähemalt määratud osakaalul kõigist ajasammudest. Tulemused eksporditakse eraldi failidena ja kombineeritakse soojuskaardiks.
+Iga 15 lävikombinatsiooni puhul klassifitseeritakse piksel kahjustunuks, kui selle EVI on allpool EVI lävendit vähemalt määratud osakaalul kõigist ajasammudest. Tulemused eksporditakse eraldi failidena ja kombineeritakse soojuskaardiks.
 
 ---
 
@@ -80,16 +80,7 @@ Kõik väljundid eksporditakse **10 m lahutusega** koordinaatsüsteemis **EPSG:3
 
 ---
 
-## Viited
-
-- Beven, K.J. & Kirkby, M.J. (1979). A physically based, variable contributing area model of basin hydrology.
-- Huete, A. et al. (1994). Development of vegetation and soil indices for MODIS-EOS.
-- Huete, A. et al. (2002). Overview of the radiometric and biophysical performance of the MODIS vegetation indices.
-- Kmoch, A. et al. (2020). EstSoil-EH: A high-resolution eco-hydrological soil parameter dataset for Estonia.
-- Raatz, L. et al. (2019). Landscape context and field margins matter for arthropod communities.
-
----
 
 ## Autor
-
+Vete-Mari Kuningas
 Magistritöö projekt — Tartu Ülikool
