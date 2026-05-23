@@ -13,7 +13,7 @@ var agriVec2024 = ee.FeatureCollection("projects/magister-458413/assets/neg10_po
 
 var proj3301 = ee.Projection('EPSG:3301');
 
-// Hardcode Eesti bounding box — väldib geometry arvutamise vigu
+// Eesti bounding box — väldib geometry arvutamise vigu
 var exportRegion = ee.Geometry.Rectangle([21.5, 57.5, 28.1, 59.9]);
 
 var vectorToRaster = function(fc) {
